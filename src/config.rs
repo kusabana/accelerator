@@ -18,7 +18,7 @@ impl Config {
         Ok(Self { 0: sigs.clone() })
     }
 
-    pub fn get_value(self, key: &str) -> Result<String> {
+    pub fn get_value(&self, key: &str) -> Result<String> {
         let entry = self.0.get(key).ok_or(AcceleratorError::EntryMissing(key.to_string()))?;
         let value = entry.as_str().ok_or(AcceleratorError::EntryInvalid(key.to_string()))?.to_string();
         

@@ -1,9 +1,11 @@
 use anyhow::Result;
 use rglua::prelude::*;
+use skidscan::Signature;
 
 mod error;
 mod config;
 
+use error::AcceleratorError;
 use config::{Config, CONFIG_LOCATION};
 
 #[macro_export]
@@ -23,8 +25,25 @@ fn open(state: LuaState) -> Result<i32> {
     log!(state, "core", "loading config for target `{}`...", TARGET);
 
     let config = Config::from_file(CONFIG_LOCATION, TARGET)?;
-    log!(state, "core", "queue sig: `{}`", config.get_value("queue")?);
 
+    let get_download_queue_size_sig = config.get_value("CL_GetDownloadQueueSize")?;
+    let get_download_queue_size: Signature = get_download_queue_size_sig
+            .parse().map_err(AcceleratorError::SigParseError)?;
+    let queue_download_sig = config.get_value("CL_QueueDownload")?;
+    let queue_download: Signature = queue_download_sig
+            .parse().map_err(AcceleratorError::SigParseError)?;
+    let download_update_sig = config.get_value("CL_DownloadUpdate")?;
+    let download_update: Signature = download_update_sig
+            .parse().map_err(AcceleratorError::SigParseError)?;
+
+    unsafe {
+        log!(state, "core", "CL_GetDownloadQueueSize => {:?}", get_download_queue_size.scan_module("engine_client.so")
+                .map_err(AcceleratorError::ModuleScanError)?);
+        log!(state, "core", "CL_QueueDownload => {:?}", queue_download.scan_module("engine_client.so")
+                .map_err(AcceleratorError::ModuleScanError)?);
+        log!(state, "core", "CL_DownloadUpdate => {:?}", download_update.scan_module("engine_client.so")
+                .map_err(AcceleratorError::ModuleScanError)?);
+    }
     Ok(0)
 }
 
