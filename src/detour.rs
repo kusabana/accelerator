@@ -52,7 +52,12 @@ unsafe extern "cdecl" fn CheckUpdatingSteamResources_detour(this: *mut CClientSt
         for downloadable in downloadables.entries() {
             log!(state, "queue", "dispatching downloadable: {}", downloadable);
 
+            // handle fastdl
+            // handle .gma's
         }
+
+        // ^ above should block until done
+        // call finishsignonstate_new
     }
 }
 
