@@ -2,13 +2,22 @@
 name = "accelerator"
 version = "0.1.0"
 edition = "2021"
+publish = false
 
 [lib]
 crate-type = ["cdylib"]
 
+[profile.release]
+codegen-units = 1
+lto = "thin"
+panic = "abort"
+opt-level = "s"
+
 [dependencies]
-rglua = "3.0.0-beta2"
-skidscan = "2.0.1"
+gmod = {version = "17", features=["gmcl"]}
+rc_event_queue = "0.4.2"
+rglua = "2.1"
 toml = "0.7.5"
 thiserror = "1.0"
+viable = "0.2.0"
 anyhow = "1.0.71"
