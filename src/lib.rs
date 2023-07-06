@@ -26,14 +26,11 @@ fn open(state: LuaState) -> Result<i32> {
 
     let config = Config::from_file(CONFIG_LOCATION, TARGET)?;
 
-    let get_download_queue_size_sig = config.get_value("CL_GetDownloadQueueSize")?;
-    let get_download_queue_size: Signature = get_download_queue_size_sig
+    let get_download_queue_size: Signature = config.get_value("CL_GetDownloadQueueSize")?
             .parse().map_err(AcceleratorError::SigParseError)?;
-    let queue_download_sig = config.get_value("CL_QueueDownload")?;
-    let queue_download: Signature = queue_download_sig
+    let queue_download: Signature = config.get_value("CL_QueueDownload")?
             .parse().map_err(AcceleratorError::SigParseError)?;
-    let download_update_sig = config.get_value("CL_DownloadUpdate")?;
-    let download_update: Signature = download_update_sig
+    let download_update: Signature = config.get_value("CL_DownloadUpdate")?
             .parse().map_err(AcceleratorError::SigParseError)?;
 
     unsafe {
