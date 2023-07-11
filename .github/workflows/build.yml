@@ -39,8 +39,12 @@ jobs:
        run: |
          mv target/x86_64-unknown-linux-gnu/release/libaccelerator.so gmsv_accelerator_linux64.dll
          mv target/i686-unknown-linux-gnu/release/libaccelerator.so gmsv_accelerator_linux.dll
+     - uses: actions/upload-artifact@v3
+       with:
+         name: build-artifact
+         path: ./*.dll
      - name: release
-       if: ${{ false }}
+       if: ${{ startsWith(github.ref, 'refs/tags/') }}
        uses: softprops/action-gh-release@v1
        with:
          files: |
@@ -77,8 +81,12 @@ jobs:
        run: |
          mv target/x86_64-pc-windows-msvc/release/accelerator.dll gmsv_accelerator_win64.dll
          mv target/i686-pc-windows-msvc/release/accelerator.dll gmsv_accelerator_win32.dll
+     - uses: actions/upload-artifact@v3
+       with:
+         name: build-artifact
+         path: ./*.dll
      - name: release
-       if: ${{ false }}
+       if: ${{ startsWith(github.ref, 'refs/tags/') }}
        uses: softprops/action-gh-release@v1
        with:
          files: |
