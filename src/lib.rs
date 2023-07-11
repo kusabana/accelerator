@@ -23,7 +23,7 @@ macro_rules! log {
 }
 
 #[gmod13_open]
-unsafe fn open(_state: State) -> i32 {
+unsafe fn gmod13_open(_state: State) -> i32 {
     override_stdout();
 
     log!("loading...");
@@ -34,7 +34,7 @@ unsafe fn open(_state: State) -> i32 {
 }
 
 #[gmod13_close]
-unsafe fn close(_state: State) -> i32 {
+unsafe fn gmod13_close(_state: State) -> i32 {
     log!("unloading...");
 
     unsafe { detour::revert() };
