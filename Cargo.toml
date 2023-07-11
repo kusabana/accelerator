@@ -14,7 +14,6 @@ opt-level = "s"
 
 [dependencies]
 gmod = {version = "17", features=["gmcl"]}
-rc_event_queue = "0.4.2"
 rglua = "2.1"
 toml = "0.7.5"
 thiserror = "1.0"
