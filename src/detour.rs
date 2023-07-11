@@ -1,9 +1,7 @@
-use std::{ffi::{CStr, c_void}, os::raw::c_char};
-use std::sync::Mutex;
-use gmod::{type_alias, open_library, find_gmod_signature};
 use anyhow::Result;
 use bzip2_rs::decoder::DecoderReader;
 use gmod::{abi, find_gmod_signature, open_library, type_alias};
+use gmod::{find_gmod_signature, open_library, type_alias};
 use reqwest::StatusCode;
 use rglua::prelude::*;
 use std::fs::File;
@@ -13,9 +11,14 @@ use std::path::Path;
 use std::path::{Component, PathBuf};
 use std::str::FromStr;
 use std::sync::Mutex;
+use std::sync::Mutex;
 use std::thread;
 use std::thread::JoinHandle;
 use std::time::Instant;
+use std::{
+    ffi::{c_void, CStr},
+    os::raw::c_char,
+};
 use std::{
     ffi::{c_void, CStr},
     os::raw::c_char,
@@ -162,10 +165,10 @@ unsafe extern "cdecl" fn DownloadUpdate_detour() -> bool {
 
             match file {
                 Ok(file) => log!("finished `{}`", file),
-                Err(e) => log!("caught error: {}", e)
+                Err(e) => log!("caught error: {}", e),
             }
         }
-    
+
         log!("finished!");
         if let Some(timestamp) = state.timestamp {
             log!("elapsed: `{:?}`", timestamp.elapsed());
@@ -178,10 +181,10 @@ unsafe extern "cdecl" fn DownloadUpdate_detour() -> bool {
 
 pub unsafe fn apply() {
     log!("applying detours...");
-    
+
     let state = DownloadState::new();
-    
-	let (_lib, path) = open_library!("engine_client").expect("Failed to find engine_client!");
+
+    let (_lib, path) = open_library!("engine_client").expect("Failed to find engine_client!");
 
     // most of these sigs aren't very future-proof but i spent hours on learning
     // the binary ninja api to create my script in scripts/ so i'm not going to put it to waste.
@@ -247,7 +250,7 @@ pub unsafe fn apply() {
 
 pub unsafe fn revert() {
     log!("reverting detours...");
-    
+
     GET_DOWNLOAD_QUEUE_SIZE_DETOUR.take();
     QUEUE_DOWNLOAD_DETOUR.take();
     DOWNLOAD_UPDATE_DETOUR.take();

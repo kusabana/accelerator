@@ -6,7 +6,8 @@
 use gmod::gmcl::override_stdout;
 use gmod::lua::State;
 
-#[macro_use] extern crate gmod;
+#[macro_use]
+extern crate gmod;
 
 mod detour;
 mod error;
@@ -19,12 +20,12 @@ macro_rules! log {
     ($fmt:expr) => {
         println!(concat!("accelerator: ", $fmt))
     };
-}arcadian
+}
 
 #[gmod13_open]
 unsafe fn open(_state: State) -> i32 {
     override_stdout();
-    
+
     log!("loading...");
 
     unsafe { detour::apply() };
@@ -33,10 +34,10 @@ unsafe fn open(_state: State) -> i32 {
 }
 
 #[gmod13_close]
-unsafe fn close(_state: State) -> i32{
+unsafe fn close(_state: State) -> i32 {
     log!("unloading...");
 
     unsafe { detour::revert() };
-    
+
     0
 }
