@@ -1,3 +1,6 @@
+use std::{ffi::{CStr, c_void}, os::raw::c_char};
+use std::sync::Mutex;
+use gmod::{type_alias, open_library, find_gmod_signature};
 use anyhow::Result;
 use bzip2_rs::decoder::DecoderReader;
 use gmod::{abi, find_gmod_signature, open_library, type_alias};
@@ -28,15 +31,13 @@ static mut QUEUE_DOWNLOAD_DETOUR: Option<gmod::detour::GenericDetour<QueueDownlo
 static mut DOWNLOAD_UPDATE_DETOUR: Option<gmod::detour::GenericDetour<DownloadUpdate>> = None;
 
 struct DownloadState {
-    lua: LuaState,
     handles: Vec<JoinHandle<Result<String>>>,
     timestamp: Option<Instant>,
 }
 
 impl DownloadState {
-    pub fn new(lua: LuaState) -> Self {
+    pub fn new() -> Self {
         Self {
-            lua,
             handles: Vec::new(),
             timestamp: None,
         }
@@ -103,14 +104,10 @@ unsafe extern "cdecl" fn QueueDownload_detour(
 
     let path = PathBuf::from_str(&game_path).unwrap();
     if path.components().any(|x| x == Component::ParentDir) {
-        log!(
-            state.lua,
-            "ignoring file `{}` due to path traversal",
-            path.display()
-        );
+        log!("ignoring file `{}` due to path traversal", path.display());
         return;
     }
-    log!(state.lua, "dispatching `{}`", path.display());
+    log!("dispatching `{}`", path.display());
     let handle: JoinHandle<Result<String>> = thread::spawn(move || {
         // we need to try both file and file.bz2
         let suffixes = [".bz2", ""];
@@ -164,14 +161,14 @@ unsafe extern "cdecl" fn DownloadUpdate_detour() -> bool {
             let file = handle.join().unwrap();
 
             match file {
-                Ok(file) => log!(state.lua, "finished `{}`", file),
-                Err(e) => log!(state.lua, "caught error: {}", e),
+                Ok(file) => log!("finished `{}`", file),
+                Err(e) => log!("caught error: {}", e)
             }
         }
-
-        log!(state.lua, "finished!");
+    
+        log!("finished!");
         if let Some(timestamp) = state.timestamp {
-            log!(state.lua, "elapsed: `{:?}`", timestamp.elapsed());
+            log!("elapsed: `{:?}`", timestamp.elapsed());
             state.timestamp = None;
         }
     }
@@ -179,12 +176,12 @@ unsafe extern "cdecl" fn DownloadUpdate_detour() -> bool {
     DOWNLOAD_UPDATE_DETOUR.as_ref().unwrap().call()
 }
 
-pub unsafe fn apply(lua: LuaState) {
-    log!(lua, "applying detours...");
-
-    let state = DownloadState::new(lua);
-
-    let (_lib, path) = open_library!("engine_client").expect("Failed to find engine_client!");
+pub unsafe fn apply() {
+    log!("applying detours...");
+    
+    let state = DownloadState::new();
+    
+	let (_lib, path) = open_library!("engine_client").expect("Failed to find engine_client!");
 
     // most of these sigs aren't very future-proof but i spent hours on learning
     // the binary ninja api to create my script in scripts/ so i'm not going to put it to waste.
@@ -248,9 +245,9 @@ pub unsafe fn apply(lua: LuaState) {
     STATE = Some(Mutex::new(state));
 }
 
-pub unsafe fn revert(lua: LuaState) {
-    log!(lua, "reverting detours...");
-
+pub unsafe fn revert() {
+    log!("reverting detours...");
+    
     GET_DOWNLOAD_QUEUE_SIZE_DETOUR.take();
     QUEUE_DOWNLOAD_DETOUR.take();
     DOWNLOAD_UPDATE_DETOUR.take();
