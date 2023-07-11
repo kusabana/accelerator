@@ -41,8 +41,8 @@ def expression_extract_wildcard(hlil, expressions):
 
 expressions = {
     "CL_GetDownloadQueueSize": (
-        "HLIL_IF(HLIL_CMP_E(HLIL_CALL(HLIL_CONST_PTR(??), ()), HLIL_CONST(0)))",
-    ),  # universal
+        "HLIL_IF(HLIL_CMP_E(HLIL_CALL(HLIL_CONST_PTR(??), ()), HLIL_CONST(0)))",  # universal
+    ),
     "CL_DownloadUpdate": (
         "HLIL_IF(HLIL_AND(HLIL_CMP_NE(HLIL_VAR(..), HLIL_CONST(0)), HLIL_CMP_E(HLIL_CALL(HLIL_CONST_PTR(??), ()), HLIL_CONST(0)))",  # linux
         "HLIL_ASSIGN(HLIL_VAR(..), HLIL_CALL(HLIL_CONST_PTR(??), ()))",  # windows

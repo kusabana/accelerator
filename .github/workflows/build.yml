@@ -1,0 +1,87 @@
+name: build
+on:
+  push:
+    tags:
+     - 'v*.*.*'
+
+jobs:
+  linux:
+    runs-on: ubuntu-latest
+    steps:
+     - uses: actions/checkout@v2
+     - name: install build dependencies
+       run: |
+         sudo dpkg --add-architecture i386
+         sudo apt-get update
+         sudo apt-get install -y gcc-multilib g++-multilib libssl-dev:i386
+     - name: setup 64-bit toolchain
+       uses: actions-rs/toolchain@v1
+       with:
+         profile: minimal
+         toolchain: nightly-2023-07-05
+         target: x86_64-unknown-linux-gnu
+         default: true
+         override: true
+     - name: build 64-bit
+       run: cargo build --release --target x86_64-unknown-linux-gnu
+     - name: setup 32-bit toolchain
+       uses: actions-rs/toolchain@v1
+       with:
+         profile: minimal
+         toolchain: nightly-2023-07-05
+         target: i686-unknown-linux-gnu
+         default: true
+         override: true
+     - name: build 32-bit
+       run: PKG_CONFIG_SYSROOT_DIR=/ cargo build --release --target i686-unknown-linux-gnu
+     - name: rename binaries
+       run: |
+         mv target/x86_64-unknown-linux-gnu/release/libaccelerator.so gmsv_accelerator_linux64.dll
+         mv target/i686-unknown-linux-gnu/release/libaccelerator.so gmsv_accelerator_linux.dll
+     - name: release
+       if: ${{ false }}
+       uses: softprops/action-gh-release@v1
+       with:
+         files: |
+           gmsv_accelerator_linux64.dll
+           gmsv_accelerator_linux.dll
+       env:
+         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  windows:
+    runs-on: windows-latest
+    steps:
+     - uses: actions/checkout@v2
+     - name: setup 64-bit toolchain
+       uses: actions-rs/toolchain@v1
+       with:
+         profile: minimal
+         toolchain: nightly-2023-07-05
+         target: x86_64-pc-windows-msvc
+         default: true
+         override: true
+     - name: build 64-bit
+       run: cargo build --release --target x86_64-pc-windows-msvc
+     - name: setup 32-bit toolchain
+       uses: actions-rs/toolchain@v1
+       with:
+         profile: minimal
+         toolchain: nightly-2023-07-05
+         target: i686-pc-windows-msvc
+         default: true
+         override: true
+     - name: build 32-bit
+       run: cargo build --release --target i686-pc-windows-msvc
+     - name: rename binaries
+       run: |
+         mv target/x86_64-pc-windows-msvc/release/accelerator.dll gmsv_accelerator_win64.dll
+         mv target/i686-pc-windows-msvc/release/accelerator.dll gmsv_accelerator_win32.dll
+     - name: release
+       if: ${{ false }}
+       uses: softprops/action-gh-release@v1
+       with:
+         files: |
+           gmsv_accelerator_win64.dll
+           gmsv_accelerator_win32.dll
+       env:
+         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
