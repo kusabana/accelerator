@@ -1,91 +1,205 @@
-use std::{ffi::CStr, os::raw::c_char};
+use std::{ffi::{CStr, c_void}, os::raw::c_char};
 use std::sync::Mutex;
-use std::ops::Deref;
-
 use rglua::prelude::*;
-use anyhow::Result;
 use gmod::{type_alias, open_library, find_gmod_signature};
-use viable::vtable;
+use anyhow::Result;
+use std::time::Instant;
+use std::{thread};
+use std::thread::JoinHandle;
+use std::path::{PathBuf, Component};
+use std::str::FromStr;
+use std::fs::File;
+use std::io::Cursor;
+use std::io::copy;
+use std::path::Path;
+use reqwest::StatusCode;
+use bzip2_rs::decoder::DecoderReader;
 
-use crate::error::AcceleratorError;
 use crate::log;
+use crate::error::AcceleratorError;
 
-static mut CHECK_UPDATING_DETOUR: Option<gmod::detour::GenericDetour<CheckUpdatingSteamResources>> = None;
-static mut STATE: Option<Mutex<LuaState>> = None;
+static mut GET_DOWNLOAD_QUEUE_SIZE_DETOUR: Option<gmod::detour::GenericDetour<GetDownloadQueueSize>> = None;
+static mut QUEUE_DOWNLOAD_DETOUR: Option<gmod::detour::GenericDetour<QueueDownload>> = None;
+static mut DOWNLOAD_UPDATE_DETOUR: Option<gmod::detour::GenericDetour<DownloadUpdate>> = None;
 
-
-pub struct CClientState;
-
-#[vtable]
-pub struct INetworkStringTable {
-    #[offset(4)]
-    get_size: extern "C" fn() -> i32,
-    #[offset(10)]
-    get_entry: extern "C" fn(index: i32) -> *const c_char,
+struct DownloadState {
+    lua: LuaState,
+    handles: Vec<JoinHandle<Result<String>>>,
+    timestamp: Option<Instant>
 }
 
-impl INetworkStringTable {
-    /// helper to get table entries as a Vec<String>
-    pub unsafe fn entries(&mut self) -> Vec<String> {
-        (0..self.get_size())
-            .into_iter()
-            .map(|i| self.get_entry(i))
-            .map(|c| CStr::from_ptr(c).to_string_lossy().to_string())
-            .collect()
+impl DownloadState {
+    pub fn new(lua: LuaState) -> Self {
+        Self {
+            lua,
+            handles: Vec::new(),
+            timestamp: None
+        }
     }
+}
+
+static mut STATE: Option<Mutex<DownloadState>> = None;
+
+
+#[cfg_attr(all(target_os = "windows", target_pointer_width = "64"), abi("fastcall"))]
+#[cfg_attr(all(target_os = "windows", target_pointer_width = "32"), abi("stdcall"))]
+#[type_alias(GetDownloadQueueSize)]
+unsafe extern "cdecl" fn GetDownloadQueueSize_detour() -> i64 {
+    let binding = STATE.as_ref().unwrap();
+    let state = &mut binding.lock().unwrap();
+    let res: i64 = GET_DOWNLOAD_QUEUE_SIZE_DETOUR.as_ref().unwrap().call();
+    
+    res + <usize as TryInto<i64>>::try_into(state.handles.len()).unwrap() 
 }
 
 #[cfg_attr(all(target_os = "windows", target_pointer_width = "64"), abi("fastcall"))]
 #[cfg_attr(all(target_os = "windows", target_pointer_width = "32"), abi("stdcall"))]
-#[type_alias(CheckUpdatingSteamResources)]
-unsafe extern "cdecl" fn CheckUpdatingSteamResources_detour(this: *mut CClientState) {
+#[type_alias(QueueDownload)]
+unsafe extern "cdecl" fn QueueDownload_detour(this: *mut c_void, c_url: *const c_char, unk: *const c_char, c_path: *const c_char) {
     let binding = STATE.as_ref().unwrap();
-    let state = *binding.lock().unwrap().deref();
+    let state = &mut binding.lock().unwrap();
 
-    let list_ptr = this
-        .cast::<u8>()
-        .offset(135248)
-        .cast::<*mut INetworkStringTable>()
-        .read();
+    if state.timestamp.is_none() {
+        state.timestamp = Some(Instant::now());
+    }
 
-    if let Some(downloadables) = list_ptr.as_mut() {
-        for downloadable in downloadables.entries() {
-            log!(state, "queue", "dispatching downloadable: {}", downloadable);
+    let url = CStr::from_ptr(c_url).to_str().unwrap_or_default().to_string();
+    // dispatch to netchan if no url
+    if url.is_empty() {
+        return QUEUE_DOWNLOAD_DETOUR.as_ref().unwrap().call(
+            this, c_url, unk, c_path
+        );
+    }
 
-            // handle fastdl
-            // handle .gma's
+    let game_path = CStr::from_ptr(c_path).to_str().unwrap_or_default()
+        .replace('\\', "/");
+    
+    let path = PathBuf::from_str(&game_path).unwrap();
+    if path.components().any(|x| x == Component::ParentDir) {
+        log!(state.lua, "ignoring file `{}` due to path traversal", path.display());
+        return;
+    }
+    log!(state.lua, "dispatching `{}`", path.display());
+    let handle: JoinHandle<Result<String>> = thread::spawn(move || {
+        // we need to try both file and file.bz2
+        let suffixes = [".bz2", ""];
+        for suffix in suffixes {
+            let client = reqwest::blocking::Client::new();
+            let response = client.get(
+                format!("{}/{}{}", url, path.to_str().unwrap_or_default(), suffix)
+            ).send()?;
+
+            if response.status() == StatusCode::OK {
+                let mut content = Cursor::new(response.bytes()?);
+
+                let file_path = Path::new("garrysmod/download")
+                    .join(&path);
+                std::fs::create_dir_all(file_path.parent().unwrap_or(Path::new("")))?;
+                let mut dest = File::create_new(file_path)?;
+
+                let _ = match suffix {
+                    ".bz2" => copy(&mut DecoderReader::new(&mut content), &mut dest),
+                    _ => copy(&mut content, &mut dest)
+                };
+                
+                return Ok(path.to_str().unwrap().to_string())
+            }
         }
 
-        // ^ above should block until done
-        // call finishsignonstate_new
-    }
+        Err(AcceleratorError::RemoteFileNotFound(path.display().to_string(), url).into())
+    });
+    state.handles.push(handle);
+
 }
 
-pub unsafe fn apply(state: LuaState) -> Result<()> {
-    STATE = Some(Mutex::new(state));
-	let (_lib, _path) = open_library!("engine_client")?;
+#[cfg_attr(all(target_os = "windows", target_pointer_width = "64"), abi("fastcall"))]
+#[cfg_attr(all(target_os = "windows", target_pointer_width = "32"), abi("stdcall"))]
+#[type_alias(DownloadUpdate)]
+unsafe extern "cdecl" fn DownloadUpdate_detour() -> bool {
+    let binding = STATE.as_ref().unwrap();
+    let mut state = binding.lock().unwrap();
+
+    if !state.handles.is_empty() {
+        while let Some(handle) = state.handles.pop() {
+            let file = handle.join().unwrap();
+            
+            match file {
+                Ok(file) => log!(state.lua, "finished `{}`", file),
+                Err(e) => log!(state.lua, "caught error: {}", e)
+            }
+        }
     
-	let CheckUpdatingSteamResources = find_gmod_signature!((_lib, _path) -> {
-		win64_x86_64: [@SIG = "40 55 53 56 57 41 54 41 56 41 57 48 8D AC 24 ? ? ? ? 48 81 EC ? ? ? ? 48 8B 05 ? ? ? ? 48 33 C4 48 89 85 ? ? ? ? 49 8B F1 4D 8B F8 4C 8B F2 48 8B F9 4D 85 C9 0F 84"],
-		win32_x86_64: [@SIG = "55 8B EC 81 EC ? ? ? ? 56 57 8B 7D 10 8B F1 85 FF 0F 84 ? ? ? ? 57 E8 ? ? ? ? 83 C4 04 83 F8 01 0F 8C ? ? ? ? 80 3F 1B 75 35 8B 06 6A 1B 68 ? ? ? ? 56 FF 90 ? ? ? ?"],
-
-        linux64_x86_64: [@SIG = "55 48 89 e5 41 57 41 56 41 55 41 54 49 89 fc 53 48 83 ec 38 64 48 8b"],
-		linux32_x86_64: [@SIG = "55 89 E5 57 56 53 81 EC ? ? ? ? 8B 45 18 8B 55 14 8B 5D 08 8B 7D 0C 89 85 ? ? ? ? 8B 45 1C 8B 75 10 89 85 ? ? ? ? 8B 45 20 89 85 ? ? ? ? 8B 45 24 89 85 ? ? ? ? 65 A1 ? ? ? ? 89 45 E4 31 C0 85 D2 0F 84 ? ? ? ? 89 14 24 89 95"],
-
-		win32: [@SIG = "55 8B EC 8B 55 10 81 EC ? ? ? ? 56 8B F1 57 85 D2 0F 84 ? ? ? ? 8B CA 8D 79 01 8D 49 00 8A 01 41 84 C0 75 F9 2B CF 83 F9 01 0F 8C ? ? ? ? 80 3A 1B 75 35"],
-		linux32: [@SIG = "55 89 E5 57 56 53 81 EC ? ? ? ? 8B 45 18 8B 55 14 8B 5D 08 8B 7D 0C 89 85 ? ? ? ? 8B 45 1C 8B 75 10 89 85 ? ? ? ? 8B 45 20 89 85 ? ? ? ? 8B 45 24 89 85 ? ? ? ? 65 A1 ? ? ? ? 89 45 E4 31 C0 85 D2 0F 84 ? ? ? ? 89 14 24 89 95 ? ? ? ?"],
-	}).ok_or(AcceleratorError::SigScanError("CheckUpdatingSteamResources"))?;
-    let check_updating_detour = gmod::detour::GenericDetour::new::<CheckUpdatingSteamResources>(CheckUpdatingSteamResources, CheckUpdatingSteamResources_detour)?;
-	check_updating_detour.enable()?;
-
-    CHECK_UPDATING_DETOUR = Some(check_updating_detour);
-
-    Ok(())
+        log!(state.lua, "finished!");
+        if let Some(timestamp) = state.timestamp {
+            log!(state.lua, "elapsed: `{:?}`", timestamp.elapsed());
+            state.timestamp = None;
+        }
+    }
+    
+    DOWNLOAD_UPDATE_DETOUR.as_ref().unwrap().call()
 }
 
-pub unsafe fn revert(_state: LuaState) -> Result<()> {
-    CHECK_UPDATING_DETOUR.take();
-    STATE.take();
+pub unsafe fn apply(lua: LuaState) {
+    log!(lua, "applying detours...");
+    
+    let state = DownloadState::new(lua);
+    
+	let (_lib, path) = open_library!("engine_client").expect("Failed to find engine_client!");
 
-    Ok(())
+    // most of these sigs aren't very future-proof but i spent hours on learning
+    // the binary ninja api to create my script in scripts/ so i'm not going to put it to waste.
+    let GetDownloadQueueSize = find_gmod_signature!((_lib, path) -> {
+		win64_x86_64: [@SIG = "48 83 ec 28 48 8b 0d 85 5c 32 00 48 8b 01 ff 50 58 48 8b c8 48 8b 10 ff 52 10 03 05 88 ff 33 00 48 83 c4 28 c3"],
+		win32_x86_64: [@SIG = "00 00"], // open an issue if you need this sig, or find it yourself
+
+		linux64_x86_64: [@SIG = "55 48 89 e5 53 48 83 ec 08 48 8b 05 ?? ?? ?? ?? 8b 1d"],
+		linux32_x86_64: [@SIG = "00 00"], // open an issue if you need this sig, or find it yourself
+
+        win32: [@SIG = "8b 0d ?? ?? ?? ?? 56 8b 01 ff 50 2c 8b 35 ?? ?? ?? ?? 8b c8 8b 10 ff 52 08 03 c6 5e c3"],
+		linux32: [@SIG = "55 89 e5 53 83 ec 14 8b 15 ?? ?? ?? ?? 8b 1d ?? ?? ?? ?? 8b 02 89 14 24"],
+	}).expect("failed to find GetDownloadQueueSize`");
+    let get_download_queue_size_detour = gmod::detour::GenericDetour::new::<GetDownloadQueueSize>(GetDownloadQueueSize, GetDownloadQueueSize_detour).expect("Failed to detour GetDownloadQueueSize");
+	get_download_queue_size_detour.enable().expect("Failed to enable GetDownloadQueueSize detour");
+    
+	let QueueDownload = find_gmod_signature!((_lib, path) -> {
+		win64_x86_64: [@SIG = "48 89 74 24 20 41 56 48 83 ec 40 83 3d c6 cb 42 00 01"],
+		win32_x86_64: [@SIG = "00 00"], // open an issue if you need this sig, or find it yourself
+
+        linux64_x86_64: [@SIG = "55 48 89 e5 41 57 45 89 c7 41 56 49 89 d6 41 55 49 89 fd"],
+		linux32_x86_64: [@SIG = "00 00"], // open an issue if you need this sig, or find it yourself
+
+		win32: [@SIG = "55 8b ec 51 83 3d ?? ?? ?? ?? 01 0f 8e 8f 01 00 00 8b 0d ?? ?? ?? ?? 53 8b 01 ff 50 2c 8b 5d"],
+		linux32: [@SIG = "55 89 e5 53 83 ec 24 83 3d ?? ?? ?? ?? 01 8b 5d 08 7e 4e a1 ?? ?? ?? ?? 8b 10 89 04 24 ff 52 30 8b"],
+	}).expect("failed to find QueueDownload`");
+    let queue_download_detour = gmod::detour::GenericDetour::new::<QueueDownload>(QueueDownload, QueueDownload_detour).expect("Failed to detour QueueDownload");
+	queue_download_detour.enable().expect("Failed to enable QueueDownload detour");
+
+	let DownloadUpdate = find_gmod_signature!((_lib, path) -> {
+		win64_x86_64: [@SIG = "48 83 ec 28 48 8b 0d ?? ?? ?? ?? 48 8b 01 ff 50 58 48 8b c8 48 8b 10 ff 52 08"],
+		win32_x86_64: [@SIG = "00 00"], // open an issue if you need this sig, or find it yourself
+
+		linux64_x86_64: [@SIG = "55 48 8d 3d ?? ?? ?? ?? 48 89 e5 5d e9 9f ff ff ff 90 90 90"],
+		linux32_x86_64: [@SIG = "00 00"], // open an issue if you need this sig, or find it yourself
+
+		win32: [@SIG = "55 8b ec 5d e9 87 05 00 00"],
+		linux32: [@SIG = "55 89 e5 83 ec 18 c7 04 24 ?? ?? ?? ?? e8 9e ff ff ff c9 c3"],
+	}).expect("failed to find DownloadUpdate`");
+    let download_update_detour = gmod::detour::GenericDetour::new::<DownloadUpdate>(DownloadUpdate, DownloadUpdate_detour).expect("Failed to detour DownloadUpdate");
+	download_update_detour.enable().expect("Failed to enable DownloadUpdate detour");
+
+    GET_DOWNLOAD_QUEUE_SIZE_DETOUR = Some(get_download_queue_size_detour);
+    QUEUE_DOWNLOAD_DETOUR = Some(queue_download_detour);
+    DOWNLOAD_UPDATE_DETOUR = Some(download_update_detour);
+    
+    STATE = Some(Mutex::new(state));
+}
+
+pub unsafe fn revert(lua: LuaState) {
+    log!(lua, "reverting detours...");
+    
+    GET_DOWNLOAD_QUEUE_SIZE_DETOUR.take();
+    QUEUE_DOWNLOAD_DETOUR.take();
+    DOWNLOAD_UPDATE_DETOUR.take();
+
+    STATE.take();
 }

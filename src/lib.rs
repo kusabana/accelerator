@@ -1,5 +1,6 @@
 #![feature(c_unwind)]
-#![feature(let_chains)]
+#![feature(thread_id_value)]
+#![feature(file_create_new)]
 #![allow(non_snake_case)]
 
 use anyhow::Result;
@@ -10,28 +11,28 @@ mod detour;
 
 #[macro_export]
 macro_rules! log {
-    ($state:expr, $module:expr, $fmt:expr, $( $arg:expr ),*) => {
-        printgm!($state, concat!("accelerator::{:<10}", $fmt), $module, $( $arg ),*);
+    ($state:expr, $fmt:expr, $( $arg:expr ),*) => {
+        printgm!($state, concat!("accelerator: ", $fmt), $( $arg ),*)
     };
-    ($state:expr, $module:expr, $fmt:expr) => {
-        printgm!($state, concat!("accelerator::{:<10}", $fmt), $module);
+    ($state:expr, $fmt:expr) => {
+        printgm!($state, concat!("accelerator: ", $fmt))
     };
 }
 
 #[gmod_open]
 unsafe fn open(state: LuaState) -> Result<i32> {
-    log!(state, "core", "loading...");
+    log!(state, "loading...");
 
-    unsafe { detour::apply(state)? };
+    unsafe { detour::apply(state) };
 
     Ok(0)
 }
 
 #[gmod_close]
 unsafe fn close(state: LuaState) -> Result<i32> {
-    log!(state, "core", "unloading...");
+    log!(state, "unloading...");
 
-    unsafe { detour::revert(state)? };
+    unsafe { detour::revert(state) };
     
     Ok(0)
 }

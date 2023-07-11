@@ -1,1 +1,5 @@
 /target
+
+/scripts/__pycache__
+/scripts/bin/*
+/scripts/sigs.txt

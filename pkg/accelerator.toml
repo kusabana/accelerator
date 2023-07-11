@@ -1,4 +1,0 @@
-[x86_64-unknown-linux-gnu]
-CL_GetDownloadQueueSize = "55 48 89 e5 53 48 83 ec 08 48 8b 05 ?? ?? ?? ?? 8b 1d"
-QueueDownload = "55 48 89 e5 41 57 45 89 c7 41 56 49 89 d6 41 55 49 89 fd"
-CL_DownloadUpdate = "55 48 8d 3d ?? ?? ?? ?? 48 89 e5 5d e9 9f ff ff ff 90 90 90"
