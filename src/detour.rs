@@ -40,7 +40,7 @@ impl DownloadState {
             lua: state,
             handles: Vec::new(),
             timestamp: None,
-        }
+        };
     }
 }
 
@@ -52,7 +52,7 @@ unsafe extern "cdecl" fn GetDownloadQueueSize_detour() -> i64 {
     let state = &mut binding.lock().unwrap();
     let res: i64 = GET_DOWNLOAD_QUEUE_SIZE_DETOUR.as_ref().unwrap().call();
 
-    return res + <usize as TryInto<i64>>::try_into(state.handles.len()).unwrap()
+    return res + <usize as TryInto<i64>>::try_into(state.handles.len()).unwrap();
 }
 
 #[type_alias(QueueDownload)]
@@ -126,7 +126,7 @@ unsafe extern "cdecl" fn QueueDownload_detour(
             return Ok(path.to_str().unwrap().to_string());
         }
 
-        return Err(AcceleratorError::RemoteFileNotFound(path.display().to_string(), url).into())
+        return Err(AcceleratorError::RemoteFileNotFound(path.display().to_string(), url).into());
     });
     state.handles.push(handle);
 }
@@ -154,7 +154,7 @@ unsafe extern "cdecl" fn DownloadUpdate_detour() -> bool {
         }
     }
 
-    return DOWNLOAD_UPDATE_DETOUR.as_ref().unwrap().call()
+    return DOWNLOAD_UPDATE_DETOUR.as_ref().unwrap().call();
 }
 
 pub unsafe fn apply(l: LuaState) -> Result<()> {
@@ -220,7 +220,7 @@ pub unsafe fn apply(l: LuaState) -> Result<()> {
 
     STATE = Some(Mutex::new(state));
 
-    return Ok(())
+    return Ok(());
 }
 
 pub unsafe fn revert(l: LuaState) {

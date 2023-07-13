@@ -23,7 +23,9 @@ macro_rules! log {
 fn open(l: LuaState) -> Result<i32> {
     log!(l, "loading...");
 
-    unsafe { detour::apply(l)?; }
+    unsafe {
+        detour::apply(l)?;
+    }
 
     Ok(0)
 }
@@ -32,7 +34,9 @@ fn open(l: LuaState) -> Result<i32> {
 fn close(l: LuaState) -> Result<i32> {
     log!(l, "unloading...");
 
-    unsafe { detour::revert(l); }
+    unsafe {
+        detour::revert(l);
+    }
 
     Ok(0)
 }
