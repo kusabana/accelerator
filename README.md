@@ -6,7 +6,11 @@ multithreads source engine http downloads
 </div>
 
 ## Usage
-download latest release or compile yourself
+download latest [artifact build](https://nightly.link/ezekielathome/accelerator/workflows/build/trunk/build-artifact.zip) or compile yourself and move the binary module to `lua/bin`  
+then add the following line to `lua/menu/menu.lua`:
+```lua
+require'accelerator'
+```
 
 ## Building
 ```sh
