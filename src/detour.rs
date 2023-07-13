@@ -158,7 +158,7 @@ unsafe extern "cdecl" fn DownloadUpdate_detour() -> bool {
 }
 
 pub unsafe fn apply(l: LuaState) -> Result<()> {
-    log!(l, "applying detours...");
+    log!(l, "applying detours");
 
     let state = DownloadState::new(l);
 
@@ -168,8 +168,6 @@ pub unsafe fn apply(l: LuaState) -> Result<()> {
         open_library!("engine")?
     };
 
-    // most of these sigs aren't very future-proof but i spent hours on learning
-    // the binary ninja api to create my script in scripts/ so i'm not going to put it to waste.
     let GetDownloadQueueSize = find_gmod_signature!((_lib, path) -> {
 		win64_x86_64: [@SIG = "48 83 ec 28 48 8b 0d 85 5c 32 00 48 8b 01 ff 50 58 48 8b c8 48 8b 10 ff 52 10 03 05 88 ff 33 00 48 83 c4 28 c3"],
 		win32_x86_64: [@SIG = "00 00"], // open an issue if you need this sig, or find it yourself
@@ -177,8 +175,8 @@ pub unsafe fn apply(l: LuaState) -> Result<()> {
 		linux64_x86_64: [@SIG = "55 48 89 e5 53 48 83 ec 08 48 8b 05 ?? ?? ?? ?? 8b 1d"],
 		linux32_x86_64: [@SIG = "00 00"], // open an issue if you need this sig, or find it yourself
 
-        win32: [@SIG = "8b 0d ?? ?? ?? ?? 56 8b 01 ff 50 2c 8b 35 ?? ?? ?? ?? 8b c8 8b 10 ff 52 08 03 c6 5e c3"],
-		linux32: [@SIG = "55 89 e5 53 83 ec 14 8b 15 ?? ?? ?? ?? 8b 1d ?? ?? ?? ?? 8b 02 89 14 24"],
+        win32: [@SIG = "8b 0d ?? ?? ?? ?? 56 8b 01 ff 50 2c 8b 35 ?? ?? ?? ?? 8b c8 8b 10 ff 52 08 03 c6 5e c3"], // untested
+		linux32: [@SIG = "55 89 e5 53 83 ec 14 8b 15 ?? ?? ?? ?? 8b 1d ?? ?? ?? ?? 8b 02 89 14 24"], // untested
 	}).ok_or(AcceleratorError::SigNotFound)?;
     let get_download_queue_size_detour = gmod::detour::GenericDetour::new::<GetDownloadQueueSize>(
         GetDownloadQueueSize,
@@ -193,8 +191,8 @@ pub unsafe fn apply(l: LuaState) -> Result<()> {
 		linux64_x86_64: [@SIG = "55 48 8d 3d ?? ?? ?? ?? 48 89 e5 5d e9 9f ff ff ff 90 90 90"],
 		linux32_x86_64: [@SIG = "00 00"], // open an issue if you need this sig, or find it yourself
 
-		win32: [@SIG = "55 8b ec 5d e9 87 05 00 00"],
-		linux32: [@SIG = "55 89 e5 83 ec 18 c7 04 24 ?? ?? ?? ?? e8 9e ff ff ff c9 c3"],
+		win32: [@SIG = "55 8b ec 5d e9 87 05 00 00"], // untested
+		linux32: [@SIG = "55 89 e5 83 ec 18 c7 04 24 ?? ?? ?? ?? e8 9e ff ff ff c9 c3"], // untested
 	}).ok_or(AcceleratorError::SigNotFound)?;
     let download_update_detour =
         gmod::detour::GenericDetour::new::<DownloadUpdate>(DownloadUpdate, DownloadUpdate_detour)?;
@@ -207,8 +205,8 @@ pub unsafe fn apply(l: LuaState) -> Result<()> {
         linux64_x86_64: [@SIG = "55 48 89 e5 41 57 49 89 cf 41 56 41 55 45 89 cd"],
 		linux32_x86_64: [@SIG = "00 00"], // open an issue if you need this sig, or find it yourself
 
-		win32: [@SIG = "55 8b ec 51 83 3d ?? ?? ?? ?? 01 0f 8e 8f 01 00 00 8b 0d ?? ?? ?? ?? 53 8b 01 ff 50 2c 8b 5d"],
-		linux32: [@SIG = "55 89 e5 57 56 53 81 ec 5c 02 00 00 8b 45 0c 8b 5d 08 8b 7d 1c"],
+		win32: [@SIG = "55 8b ec 51 83 3d ?? ?? ?? ?? 01 0f 8e 8f 01 00 00 8b 0d ?? ?? ?? ?? 53 8b 01 ff 50 2c 8b 5d"], // untested
+		linux32: [@SIG = "55 89 e5 57 56 53 81 ec 5c 02 00 00 8b 45 0c 8b 5d 08 8b 7d 1c"], // untested
 	}).ok_or(AcceleratorError::SigNotFound)?;
     let queue_download_detour =
         gmod::detour::GenericDetour::new::<QueueDownload>(QueueDownload, QueueDownload_detour)?;
@@ -224,7 +222,7 @@ pub unsafe fn apply(l: LuaState) -> Result<()> {
 }
 
 pub unsafe fn revert(l: LuaState) {
-    log!(l, "reverting detours...");
+    log!(l, "reverting detours");
 
     GET_DOWNLOAD_QUEUE_SIZE_DETOUR.take();
     QUEUE_DOWNLOAD_DETOUR.take();
