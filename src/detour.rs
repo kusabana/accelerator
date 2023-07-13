@@ -1,24 +1,19 @@
 use anyhow::Result;
 use bzip2_rs::decoder::DecoderReader;
-use gmod::{abi, find_gmod_signature, open_library, type_alias};
 use gmod::{find_gmod_signature, open_library, type_alias};
 use reqwest::StatusCode;
 use rglua::prelude::*;
+use std::ffi::OsString;
 use std::fs::File;
 use std::io::copy;
 use std::io::Cursor;
 use std::path::Path;
-use std::path::{Component, PathBuf};
+use std::path::PathBuf;
 use std::str::FromStr;
-use std::sync::Mutex;
 use std::sync::Mutex;
 use std::thread;
 use std::thread::JoinHandle;
 use std::time::Instant;
-use std::{
-    ffi::{c_void, CStr},
-    os::raw::c_char,
-};
 use std::{
     ffi::{c_void, CStr},
     os::raw::c_char,
@@ -34,13 +29,15 @@ static mut QUEUE_DOWNLOAD_DETOUR: Option<gmod::detour::GenericDetour<QueueDownlo
 static mut DOWNLOAD_UPDATE_DETOUR: Option<gmod::detour::GenericDetour<DownloadUpdate>> = None;
 
 struct DownloadState {
+    lua: LuaState,
     handles: Vec<JoinHandle<Result<String>>>,
     timestamp: Option<Instant>,
 }
 
 impl DownloadState {
-    pub fn new() -> Self {
-        Self {
+    pub const fn new(state: LuaState) -> Self {
+        return Self {
+            lua: state,
             handles: Vec::new(),
             timestamp: None,
         }
@@ -49,37 +46,24 @@ impl DownloadState {
 
 static mut STATE: Option<Mutex<DownloadState>> = None;
 
-#[cfg_attr(
-    all(target_os = "windows", target_pointer_width = "64"),
-    abi("fastcall")
-)]
-#[cfg_attr(
-    all(target_os = "windows", target_pointer_width = "32"),
-    abi("stdcall")
-)]
 #[type_alias(GetDownloadQueueSize)]
 unsafe extern "cdecl" fn GetDownloadQueueSize_detour() -> i64 {
     let binding = STATE.as_ref().unwrap();
     let state = &mut binding.lock().unwrap();
     let res: i64 = GET_DOWNLOAD_QUEUE_SIZE_DETOUR.as_ref().unwrap().call();
 
-    res + <usize as TryInto<i64>>::try_into(state.handles.len()).unwrap()
+    return res + <usize as TryInto<i64>>::try_into(state.handles.len()).unwrap()
 }
 
-#[cfg_attr(
-    all(target_os = "windows", target_pointer_width = "64"),
-    abi("fastcall")
-)]
-#[cfg_attr(
-    all(target_os = "windows", target_pointer_width = "32"),
-    abi("stdcall")
-)]
 #[type_alias(QueueDownload)]
 unsafe extern "cdecl" fn QueueDownload_detour(
     this: *mut c_void,
     c_url: *const c_char,
-    unk: *const c_char,
+    unk0: i32,
     c_path: *const c_char,
+    as_http: bool,
+    compressed: bool,
+    unk3: i32,
 ) {
     let binding = STATE.as_ref().unwrap();
     let state = &mut binding.lock().unwrap();
@@ -92,12 +76,19 @@ unsafe extern "cdecl" fn QueueDownload_detour(
         .to_str()
         .unwrap_or_default()
         .to_string();
-    // dispatch to netchan if no url
-    if url.is_empty() {
+
+    // dispatch to netchan if no url or as_http is false
+    if url.is_empty() || !as_http {
+        log!(
+            state.lua,
+            "calling original... URL.IS_EMPTY={:?} !AS_HTTP={:?}",
+            url.is_empty(),
+            !as_http
+        );
         return QUEUE_DOWNLOAD_DETOUR
             .as_ref()
             .unwrap()
-            .call(this, c_url, unk, c_path);
+            .call(this, c_url, unk0, c_path, as_http, compressed, unk3);
     }
 
     let game_path = CStr::from_ptr(c_path)
@@ -105,55 +96,41 @@ unsafe extern "cdecl" fn QueueDownload_detour(
         .unwrap_or_default()
         .replace('\\', "/");
 
-    let path = PathBuf::from_str(&game_path).unwrap();
-    if path.components().any(|x| x == Component::ParentDir) {
-        log!("ignoring file `{}` due to path traversal", path.display());
-        return;
+    let mut path = PathBuf::from_str(&game_path).unwrap();
+    if compressed {
+        let mut os: OsString = path.into();
+        os.push(".bz2");
+        path = os.into();
     }
-    log!("dispatching `{}`", path.display());
+
+    log!(state.lua, "dispatching `{}`", path.display());
     let handle: JoinHandle<Result<String>> = thread::spawn(move || {
-        // we need to try both file and file.bz2
-        let suffixes = [".bz2", ""];
-        for suffix in suffixes {
-            let client = reqwest::blocking::Client::new();
-            let response = client
-                .get(format!(
-                    "{}/{}{}",
-                    url,
-                    path.to_str().unwrap_or_default(),
-                    suffix
-                ))
-                .send()?;
+        let client = reqwest::blocking::Client::new();
+        let response = client
+            .get(format!("{}/{}", url, path.to_str().unwrap_or_default(),))
+            .send()?;
 
-            if response.status() == StatusCode::OK {
-                let mut content = Cursor::new(response.bytes()?);
+        if response.status() == StatusCode::OK {
+            let mut content = Cursor::new(response.bytes()?);
 
-                let file_path = Path::new("garrysmod/download").join(&path);
-                std::fs::create_dir_all(file_path.parent().unwrap_or(Path::new("")))?;
-                let mut dest = File::create_new(file_path)?;
+            let file_path = Path::new("garrysmod/download").join(path.with_extension(""));
+            std::fs::create_dir_all(file_path.parent().unwrap_or_else(|| return Path::new("")))?;
+            let mut dest = File::create_new(file_path)?;
 
-                let _ = match suffix {
-                    ".bz2" => copy(&mut DecoderReader::new(&mut content), &mut dest),
-                    _ => copy(&mut content, &mut dest),
-                };
+            let _ = if compressed {
+                copy(&mut DecoderReader::new(&mut content), &mut dest)
+            } else {
+                copy(&mut content, &mut dest)
+            };
 
-                return Ok(path.to_str().unwrap().to_string());
-            }
+            return Ok(path.to_str().unwrap().to_string());
         }
 
-        Err(AcceleratorError::RemoteFileNotFound(path.display().to_string(), url).into())
+        return Err(AcceleratorError::RemoteFileNotFound(path.display().to_string(), url).into())
     });
     state.handles.push(handle);
 }
 
-#[cfg_attr(
-    all(target_os = "windows", target_pointer_width = "64"),
-    abi("fastcall")
-)]
-#[cfg_attr(
-    all(target_os = "windows", target_pointer_width = "32"),
-    abi("stdcall")
-)]
 #[type_alias(DownloadUpdate)]
 unsafe extern "cdecl" fn DownloadUpdate_detour() -> bool {
     let binding = STATE.as_ref().unwrap();
@@ -164,27 +141,32 @@ unsafe extern "cdecl" fn DownloadUpdate_detour() -> bool {
             let file = handle.join().unwrap();
 
             match file {
-                Ok(file) => log!("finished `{}`", file),
-                Err(e) => log!("caught error: {}", e),
+                Ok(file) => log!(state.lua, "finished `{}`", file),
+                Err(e) => log!(state.lua, "caught error: {}", e),
             }
         }
 
-        log!("finished!");
+        log!(state.lua, "finished!");
         if let Some(timestamp) = state.timestamp {
-            log!("elapsed: `{:?}`", timestamp.elapsed());
+            log!(state.lua, "elapsed: `{:?}`", timestamp.elapsed());
             state.timestamp = None;
+            drop(state);
         }
     }
 
-    DOWNLOAD_UPDATE_DETOUR.as_ref().unwrap().call()
+    return DOWNLOAD_UPDATE_DETOUR.as_ref().unwrap().call()
 }
 
-pub unsafe fn apply() {
-    log!("applying detours...");
+pub unsafe fn apply(l: LuaState) -> Result<()> {
+    log!(l, "applying detours...");
 
-    let state = DownloadState::new();
+    let state = DownloadState::new(l);
 
-    let (_lib, path) = open_library!("engine_client").expect("Failed to find engine_client!");
+    let (_lib, path) = if cfg!(all(target_os = "linux", target_pointer_width = "64")) {
+        open_library!("engine_client")?
+    } else {
+        open_library!("engine")?
+    };
 
     // most of these sigs aren't very future-proof but i spent hours on learning
     // the binary ninja api to create my script in scripts/ so i'm not going to put it to waste.
@@ -197,32 +179,12 @@ pub unsafe fn apply() {
 
         win32: [@SIG = "8b 0d ?? ?? ?? ?? 56 8b 01 ff 50 2c 8b 35 ?? ?? ?? ?? 8b c8 8b 10 ff 52 08 03 c6 5e c3"],
 		linux32: [@SIG = "55 89 e5 53 83 ec 14 8b 15 ?? ?? ?? ?? 8b 1d ?? ?? ?? ?? 8b 02 89 14 24"],
-	}).expect("failed to find GetDownloadQueueSize`");
+	}).ok_or(AcceleratorError::SigNotFound)?;
     let get_download_queue_size_detour = gmod::detour::GenericDetour::new::<GetDownloadQueueSize>(
         GetDownloadQueueSize,
         GetDownloadQueueSize_detour,
-    )
-    .expect("Failed to detour GetDownloadQueueSize");
-    get_download_queue_size_detour
-        .enable()
-        .expect("Failed to enable GetDownloadQueueSize detour");
-
-    let QueueDownload = find_gmod_signature!((_lib, path) -> {
-		win64_x86_64: [@SIG = "48 89 74 24 20 41 56 48 83 ec 40 83 3d c6 cb 42 00 01"],
-		win32_x86_64: [@SIG = "00 00"], // open an issue if you need this sig, or find it yourself
-
-        linux64_x86_64: [@SIG = "55 48 89 e5 41 57 45 89 c7 41 56 49 89 d6 41 55 49 89 fd"],
-		linux32_x86_64: [@SIG = "00 00"], // open an issue if you need this sig, or find it yourself
-
-		win32: [@SIG = "55 8b ec 51 83 3d ?? ?? ?? ?? 01 0f 8e 8f 01 00 00 8b 0d ?? ?? ?? ?? 53 8b 01 ff 50 2c 8b 5d"],
-		linux32: [@SIG = "55 89 e5 53 83 ec 24 83 3d ?? ?? ?? ?? 01 8b 5d 08 7e 4e a1 ?? ?? ?? ?? 8b 10 89 04 24 ff 52 30 8b"],
-	}).expect("failed to find QueueDownload`");
-    let queue_download_detour =
-        gmod::detour::GenericDetour::new::<QueueDownload>(QueueDownload, QueueDownload_detour)
-            .expect("Failed to detour QueueDownload");
-    queue_download_detour
-        .enable()
-        .expect("Failed to enable QueueDownload detour");
+    )?;
+    get_download_queue_size_detour.enable()?;
 
     let DownloadUpdate = find_gmod_signature!((_lib, path) -> {
 		win64_x86_64: [@SIG = "48 83 ec 28 48 8b 0d ?? ?? ?? ?? 48 8b 01 ff 50 58 48 8b c8 48 8b 10 ff 52 08"],
@@ -233,23 +195,36 @@ pub unsafe fn apply() {
 
 		win32: [@SIG = "55 8b ec 5d e9 87 05 00 00"],
 		linux32: [@SIG = "55 89 e5 83 ec 18 c7 04 24 ?? ?? ?? ?? e8 9e ff ff ff c9 c3"],
-	}).expect("failed to find DownloadUpdate`");
+	}).ok_or(AcceleratorError::SigNotFound)?;
     let download_update_detour =
-        gmod::detour::GenericDetour::new::<DownloadUpdate>(DownloadUpdate, DownloadUpdate_detour)
-            .expect("Failed to detour DownloadUpdate");
-    download_update_detour
-        .enable()
-        .expect("Failed to enable DownloadUpdate detour");
+        gmod::detour::GenericDetour::new::<DownloadUpdate>(DownloadUpdate, DownloadUpdate_detour)?;
+    download_update_detour.enable()?;
+
+    let QueueDownload = find_gmod_signature!((_lib, path) -> {
+		win64_x86_64: [@SIG = "40 53 55 56 57 41 54 41 55 41 56 41 57 48 81 ec 78 02 00 00"],
+		win32_x86_64: [@SIG = "00 00"], // open an issue if you need this sig, or find it yourself
+
+        linux64_x86_64: [@SIG = "55 48 89 e5 41 57 49 89 cf 41 56 41 55 45 89 cd"],
+		linux32_x86_64: [@SIG = "00 00"], // open an issue if you need this sig, or find it yourself
+
+		win32: [@SIG = "55 8b ec 51 83 3d ?? ?? ?? ?? 01 0f 8e 8f 01 00 00 8b 0d ?? ?? ?? ?? 53 8b 01 ff 50 2c 8b 5d"],
+		linux32: [@SIG = "55 89 e5 57 56 53 81 ec 5c 02 00 00 8b 45 0c 8b 5d 08 8b 7d 1c"],
+	}).ok_or(AcceleratorError::SigNotFound)?;
+    let queue_download_detour =
+        gmod::detour::GenericDetour::new::<QueueDownload>(QueueDownload, QueueDownload_detour)?;
+    queue_download_detour.enable()?;
 
     GET_DOWNLOAD_QUEUE_SIZE_DETOUR = Some(get_download_queue_size_detour);
     QUEUE_DOWNLOAD_DETOUR = Some(queue_download_detour);
     DOWNLOAD_UPDATE_DETOUR = Some(download_update_detour);
 
     STATE = Some(Mutex::new(state));
+
+    return Ok(())
 }
 
-pub unsafe fn revert() {
-    log!("reverting detours...");
+pub unsafe fn revert(l: LuaState) {
+    log!(l, "reverting detours...");
 
     GET_DOWNLOAD_QUEUE_SIZE_DETOUR.take();
     QUEUE_DOWNLOAD_DETOUR.take();

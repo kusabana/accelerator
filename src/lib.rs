@@ -3,41 +3,36 @@
 #![feature(file_create_new)]
 #![allow(non_snake_case)]
 
-use gmod::gmcl::override_stdout;
-use gmod::lua::State;
-
-#[macro_use]
-extern crate gmod;
+use anyhow::Result;
+use rglua::prelude::*;
 
 mod detour;
 mod error;
 
 #[macro_export]
 macro_rules! log {
-    ($fmt:expr, $( $arg:expr ),*) => {
-        println!(concat!("accelerator: ", $fmt), $( $arg ),*)
+    ($state:expr, $fmt:expr, $( $arg:expr ),*) => {
+        printgm!($state, concat!("accelerator: ", $fmt), $( $arg ),*)
     };
-    ($fmt:expr) => {
-        println!(concat!("accelerator: ", $fmt))
+    ($state:expr, $fmt:expr) => {
+        printgm!($state, concat!("accelerator: ", $fmt))
     };
 }
 
-#[gmod13_open]
-unsafe fn open(_state: State) -> i32 {
-    override_stdout();
+#[gmod_open]
+fn open(l: LuaState) -> Result<i32> {
+    log!(l, "loading...");
 
-    log!("loading...");
+    unsafe { detour::apply(l)?; }
 
-    unsafe { detour::apply() };
-
-    0
+    Ok(0)
 }
 
-#[gmod13_close]
-unsafe fn close(_state: State) -> i32 {
-    log!("unloading...");
+#[gmod_close]
+fn close(l: LuaState) -> Result<i32> {
+    log!(l, "unloading...");
 
-    unsafe { detour::revert() };
+    unsafe { detour::revert(l); }
 
-    0
+    Ok(0)
 }
