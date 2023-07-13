@@ -2,7 +2,7 @@
   <h3><a href="https://github.com/ezekielathome">
     ~ezekielathome/</a>accelerator
   </h3>
-binary module
+multithreads source engine http downloads
 </div>
 
 ## Usage
@@ -24,4 +24,4 @@ x86_64-pc-windows-msvc # windows 64-bit
 ```
 
 ## Updating patterns
-included is a simple script that uses HLIL pattern scanning to get up to date addresses / sigs which you can use to generate the patterns.
+included is a simple script that uses HLIL pattern scanning to get up to date function addresses which you can use to generate the patterns.
