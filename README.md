@@ -6,8 +6,8 @@ multithreads source engine http downloads
 </div>
 
 ## Usage
-download latest [artifact build](https://nightly.link/ezekielathome/accelerator/workflows/build/trunk/build-artifact.zip) or compile yourself and move the binary module to `lua/bin`  
-then add the following line to `lua/menu/menu.lua`:
+download latest [artifact build](https://nightly.link/ezekielathome/accelerator/workflows/build/trunk/build-artifact.zip) or compile it yourself and then move the binary module to `lua/bin`  
+then add the following line to `lua/menu/menu.lua` in order to load the module on launch:
 ```lua
 require'accelerator'
 ```
