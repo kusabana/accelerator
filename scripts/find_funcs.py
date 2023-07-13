@@ -5,11 +5,13 @@ import re
 from multiprocessing import Pool, cpu_count, set_start_method
 import sigkit.sigkit
 
+
 def create_signature(bv, func):
     # node, info = sigkit.generate_function_signature(func, False)
     # sig = info.patterns[0]
     # sig = " ".join(map(str, sig._array))
     return None
+
 
 # this doesn't handle types correctly, but it works
 # for what i need it to so problem for later.
@@ -30,6 +32,7 @@ def hlil_to_expression(hlil_instruction):
         expr = str(hlil_instruction)
     return expr
 
+
 # ?? => capture wildcard
 # .. => non-captured wildcard
 # (supports multiline expressions)
@@ -41,6 +44,7 @@ def expression_extract_wildcard(hlil, expressions):
         if match:
             return (expression, match.group(1))
     return (None, None)
+
 
 def extract_wildcards(hlil, expressions):
     values = [
@@ -54,6 +58,7 @@ def extract_wildcards(hlil, expressions):
     ]
     return values
 
+
 markers = {
     "CheckUpdatingSteamResources": {
         "CL_GetDownloadQueueSize": (
@@ -64,23 +69,20 @@ markers = {
             "HLIL_ASSIGN(HLIL_VAR(..), HLIL_CALL(HLIL_CONST_PTR(??), ()))",  # windows
         ),
     },
-    'Multiple download search paths?': {}
+    "Multiple download search paths?": {},
 }
 
-def search_callback(addr, string, line):
-    print(addr, string, line)
-    return false
 
 def spawn(binary):
     binaryninja.set_worker_thread_count(1)
-    #print(binary)
+    # print(binary)
     with binaryninja.open_view(binary) as bv:
         for marker, expressions in markers.items():
             matches = list(bv.find_all_text(bv.start, bv.end, marker))
             text = matches[0]
             func = bv.get_functions_containing(text[0])[0]
             print("~ %s:%s => %s (0x%x)" % (binary, marker, func, func.start))
-            
+
             if expressions:
                 instructions = func.hlil.instructions
                 hlil = "\n".join([hlil_to_expression(instr) for instr in instructions])
