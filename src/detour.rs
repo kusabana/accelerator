@@ -36,11 +36,11 @@ struct DownloadState {
 
 impl DownloadState {
     pub const fn new(state: LuaState) -> Self {
-        return Self {
+        Self {
             lua: state,
             handles: Vec::new(),
             timestamp: None,
-        };
+        }
     }
 }
 
@@ -52,7 +52,7 @@ unsafe extern "cdecl" fn GetDownloadQueueSize_detour() -> i64 {
     let state = &mut binding.lock().unwrap();
     let res: i64 = GET_DOWNLOAD_QUEUE_SIZE_DETOUR.as_ref().unwrap().call();
 
-    return res + <usize as TryInto<i64>>::try_into(state.handles.len()).unwrap();
+    res + <usize as TryInto<i64>>::try_into(state.handles.len()).unwrap()
 }
 
 #[type_alias(QueueDownload)]
@@ -123,10 +123,10 @@ unsafe extern "cdecl" fn QueueDownload_detour(
                 copy(&mut content, &mut dest)
             };
 
-            return Ok(path.to_str().unwrap().to_string());
+            Ok(path.to_str().unwrap().to_string())
+        } else {
+            Err(AcceleratorError::RemoteFileNotFound(path.display().to_string(), url).into())
         }
-
-        return Err(AcceleratorError::RemoteFileNotFound(path.display().to_string(), url).into());
     });
     state.handles.push(handle);
 }
@@ -199,15 +199,16 @@ pub unsafe fn apply(l: LuaState) -> Result<()> {
     download_update_detour.enable()?;
 
     let QueueDownload = find_gmod_signature!((_lib, path) -> {
-		win64_x86_64: [@SIG = "40 53 55 56 57 41 54 41 55 41 56 41 57 48 81 ec 78 02 00 00"],
-		win32_x86_64: [@SIG = "00 00"], // open an issue if you need this sig, or find it yourself
+        win64_x86_64: [@SIG = "40 53 55 56 57 41 54 41 55 41 56 41 57 48 81 ec 78 02 00 00"],
+        win32_x86_64: [@SIG = "00 00"], // open an issue if you need this sig, or find it yourself
 
         linux64_x86_64: [@SIG = "55 48 89 e5 41 57 49 89 cf 41 56 41 55 45 89 cd"],
-		linux32_x86_64: [@SIG = "00 00"], // open an issue if you need this sig, or find it yourself
+        linux32_x86_64: [@SIG = "00 00"], // open an issue if you need this sig, or find it yourself
 
-		win32: [@SIG = "55 8b ec 51 83 3d ?? ?? ?? ?? 01 0f 8e 8f 01 00 00 8b 0d ?? ?? ?? ?? 53 8b 01 ff 50 2c 8b 5d"], // untested
-		linux32: [@SIG = "55 89 e5 57 56 53 81 ec 5c 02 00 00 8b 45 0c 8b 5d 08 8b 7d 1c"], // untested
-	}).ok_or(AcceleratorError::SigNotFound)?;
+        win32: [@SIG = "55 8b ec 51 83 3d ?? ?? ?? ?? 01 0f 8e 8f 01 00 00 8b 0d ?? ?? ?? ?? 53 8b 01 ff 50 2c 8b 5d"], // untested
+        linux32: [@SIG = "55 89 e5 57 56 53 81 ec 5c 02 00 00 8b 45 0c 8b 5d 08 8b 7d 1c"], // untested
+    })
+    .ok_or(AcceleratorError::SigNotFound)?;
     let queue_download_detour =
         gmod::detour::GenericDetour::new::<QueueDownload>(QueueDownload, QueueDownload_detour)?;
     queue_download_detour.enable()?;
@@ -218,7 +219,7 @@ pub unsafe fn apply(l: LuaState) -> Result<()> {
 
     STATE = Some(Mutex::new(state));
 
-    return Ok(());
+    Ok(())
 }
 
 pub unsafe fn revert(l: LuaState) {
