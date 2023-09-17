@@ -7,16 +7,11 @@ publish = false
 [lib]
 crate-type = ["cdylib"]
 
-[profile.release]
-codegen-units = 1
-lto = "thin"
-opt-level = "s"
-
 [dependencies]
-gmod = {version = "17", features=["gmcl"]}
-toml = "0.7.5"
-thiserror = "1.0"
 anyhow = "1.0.71"
-reqwest = { version = "0.11.18", features = ["blocking"]}
 bzip2-rs = "0.1.2"
+gmod = { version = "17", features = [ "gmcl" ] }
+reqwest = { version = "0.11.18", features = [ "blocking" ] }
 rglua = "2.1.0"
+thiserror = "1.0"
+toml = "0.8"
