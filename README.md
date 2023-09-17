@@ -23,6 +23,3 @@ x86_64-pc-windows-msvc # windows 64-bit
 i686-unknown-linux-gnu # linux 32-bit
 i686-pc-windows-msvc # windows 32-bit
 ```
-
-## Updating patterns
-included is a simple script that uses HLIL pattern scanning to get up to date function addresses which you can use to generate the patterns.
