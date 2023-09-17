@@ -68,16 +68,10 @@ jobs:
           cd target/${{ matrix.platform.target }}/release
           [ -f libaccelerator.so ] && mv libaccelerator.so accelerator.dll
 
-          mv accelerator.dll "$NAME"
-          
-          if [[ "$PLATFORM" == "windows" ]]; then
-            7z a ../../../accel-${{ matrix.platform.target }}.zip $NAME
-          else
-            tar czvf ../../../accel-${{ matrix.platform.target }}.tar.gz $NAME
-          fi
+          mv accelerator.dll "../../../$NAME"
           cd -
       - name: Publish release artifacts
         uses: actions/upload-artifact@v3
         with:
-          name: accel-${{ matrix.platform.os_name }}
-          path: "accel-*"
+          name: ${{ matrix.platform.target }}
+          path: "gmsv_accelerator_*.dll"
