@@ -1,0 +1,83 @@
+name: build
+on:
+  workflow_dispatch:
+  push:
+
+jobs:
+  artifact:
+    name: artifact - ${{ matrix.platform.target }}
+    runs-on: ${{ matrix.platform.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        platform:
+          - target: i686-unknown-linux-gnu
+            os: ubuntu-latest
+          - target: x86_64-unknown-linux-gnu
+            os: ubuntu-latest
+          - target: i686-pc-windows-msvc
+            os: windows-latest
+          - target: x86_64-pc-windows-msvc
+            os: windows-latest
+        toolchain:
+          - nightly
+  
+    steps:
+      - name: checkout
+        uses: actions/checkout@v3
+      - name: install build dependencies
+        run: |
+          sudo dpkg --add-architecture i386
+          sudo apt-get update
+          sudo apt-get install -y gcc-multilib g++-multilib libgcc-s1:i386 libssl-dev:i386
+        if: contains(matrix.platform.target, 'i686-unknown-linux')
+      - name: setup cache
+        uses: Swatinem/rust-cache@v2
+      - name: build binary
+        uses: houseabsolute/actions-rust-cross@v0
+        with:
+          command: "build"
+          target: ${{ matrix.platform.target }}
+          toolchain: ${{ matrix.toolchain }}
+          args: "--locked --release"
+        env:
+          PKG_CONFIG_SYSROOT_DIR: "/"
+          PKG_CONFIG_PATH: "/"
+      - name: package
+        shell: bash
+        run: |
+          TARGET="${{ matrix.platform.target }}"
+          ARCH=$(echo "$TARGET" | cut -d- -f 1 )
+          echo "$ARCH"
+          if [ "$ARCH" == "x86_64" ]; then
+              ARCH_SHORT="64"
+          else
+              ARCH_SHORT="32"
+          fi
+
+          PLATFORM=$(echo "$TARGET" | cut -d- -f 3 )
+          echo "$PLATFORM"
+          if [ "$PLATFORM" == "windows" ]; then
+              PLATFORM_SHORT="win"
+          else
+              PLATFORM_SHORT="linux"
+          fi
+
+          NAME="gmsv_accelerator_$PLATFORM_SHORT$ARCH_SHORT.dll"
+
+          cd target/${{ matrix.platform.target }}/release
+          [ -f libaccelerator.so ] && mv libaccelerator.so accelerator.dll
+
+          mv accelerator.dll "$NAME"
+          
+          if [[ "$PLATFORM" == "windows" ]]; then
+            7z a ../../../accel-${{ matrix.platform.target }}.zip $NAME
+          else
+            tar czvf ../../../accel-${{ matrix.platform.target }}.tar.gz $NAME
+          fi
+          cd -
+      - name: Publish release artifacts
+        uses: actions/upload-artifact@v3
+        with:
+          name: accel-${{ matrix.platform.os_name }}
+          path: "accel-*"
