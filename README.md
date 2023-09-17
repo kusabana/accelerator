@@ -5,13 +5,10 @@
 multithreads source engine http downloads
 </div>
 
-## Usage
-download the latest [artifact](https://nightly.link/ezekielathome/accelerator/workflows/ci/trunk?preview) or compile it yourself and then move the binary module to `lua/bin`  
-then add the following line to `lua/menu/menu.lua` in order to load the module on launch:
-```lua
-require'accelerator'
-```
-
+## Installation
+1. download the latest [artifact](https://nightly.link/ezekielathome/accelerator/workflows/ci/trunk?preview) or compile it yourself
+2. move the binary module (.dll file) to `garrysmod/lua/bin`  
+3. add `require'accelerator'` to `garrysmod/lua/menu/menu.lua` in order to load the module on launch
 ## Building
 ```sh
 git clone https://github.com/ezekielathome/accelerator
