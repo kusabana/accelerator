@@ -41,15 +41,6 @@ jobs:
        with:
          name: build-artifact
          path: ./*.dll
-     - name: release
-       if: ${{ startsWith(github.ref, 'refs/tags/') }}
-       uses: softprops/action-gh-release@v1
-       with:
-         files: |
-           gmsv_accelerator_linux64.dll
-           gmsv_accelerator_linux.dll
-       env:
-         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   windows:
     runs-on: windows-latest
@@ -83,12 +74,3 @@ jobs:
        with:
          name: build-artifact
          path: ./*.dll
-     - name: release
-       if: ${{ startsWith(github.ref, 'refs/tags/') }}
-       uses: softprops/action-gh-release@v1
-       with:
-         files: |
-           gmsv_accelerator_win64.dll
-           gmsv_accelerator_win32.dll
-       env:
-         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
