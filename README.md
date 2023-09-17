@@ -16,7 +16,7 @@ require'accelerator'
 ```sh
 git clone https://github.com/ezekielathome/accelerator
 cd accelerator
-cargo build --release --target=<desired_target>
+cargo +nightly build --release --target=<desired_target>
 ```
 
 target triples:
