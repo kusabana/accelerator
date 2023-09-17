@@ -3,14 +3,6 @@ import binaryninja
 from glob import glob
 import re
 from multiprocessing import Pool, cpu_count, set_start_method
-import sigkit.sigkit
-
-
-def create_signature(bv, func):
-    # node, info = sigkit.generate_function_signature(func, False)
-    # sig = info.patterns[0]
-    # sig = " ".join(map(str, sig._array))
-    return None
 
 
 # this doesn't handle types correctly, but it works
