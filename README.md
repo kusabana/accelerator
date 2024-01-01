@@ -1,17 +1,17 @@
 <div align="center">
-  <h3><a href="https://github.com/ezekielathome">
-    ~ezekielathome/</a>accelerator
+  <h3><a href="https://github.com/kusabana">
+    ~kusabana/</a>accelerator
   </h3>
 multithreads source engine http downloads
 </div>
 
 ## Installation
-1. download the latest [artifact](https://nightly.link/ezekielathome/accelerator/workflows/ci/trunk?preview) or compile it yourself
+1. download the latest artifact or compile it yourself
 2. move the binary module (.dll file) to `garrysmod/lua/bin`  
 3. add `require'accelerator'` to `garrysmod/lua/menu/menu.lua` in order to load the module on launch
 ## Building
 ```sh
-git clone https://github.com/ezekielathome/accelerator
+git clone https://github.com/kusabana/accelerator
 cd accelerator
 cargo +nightly build --release --target=<desired_target>
 ```
