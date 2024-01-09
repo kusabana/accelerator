@@ -1,8 +1,3 @@
-#![feature(c_unwind)]
-#![feature(thread_id_value)]
-#![feature(file_create_new)]
-#![allow(non_snake_case)]
-
 use anyhow::Result;
 use rglua::prelude::*;
 
