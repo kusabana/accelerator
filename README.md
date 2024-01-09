@@ -23,3 +23,7 @@ x86_64-pc-windows-msvc # windows 64-bit
 i686-unknown-linux-gnu # linux 32-bit
 i686-pc-windows-msvc # windows 32-bit
 ```
+## Todo
+```
+- check hash instead of giving up when file exists
+```
