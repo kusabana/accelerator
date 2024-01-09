@@ -9,9 +9,9 @@ crate-type = ["cdylib"]
 
 [dependencies]
 anyhow = "1.0.71"
-bzip2-rs = "0.1.2"
+bzip2 = "0.4.4"
 gmod = { version = "17", features = [ "gmcl" ] }
-reqwest = { version = "0.11.18", features = [ "blocking" ] }
 rglua = "2.1.0"
 thiserror = "1.0"
 toml = "0.8"
+ureq = "2.9.1"

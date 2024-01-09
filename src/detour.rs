@@ -15,9 +15,8 @@ use rglua::prelude::*;
 use crate::error::AcceleratorError;
 use crate::log;
 
-// TODO:
-// static VALVE_USER_AGENT: &str = "Half-Life 2";
-// static REFERER: &str = "hl2://accelerator";
+static VALVE_USER_AGENT: &str = "Half-Life 2";
+static VALVE_REFERER: &str = "hl2://accelerator";
 
 static mut GET_DOWNLOAD_QUEUE_SIZE_DETOUR: Option<GenericDetour<GetDownloadQueueSize>> = None;
 static mut QUEUE_DOWNLOAD_DETOUR: Option<GenericDetour<QueueDownload>> = None;
@@ -67,10 +66,14 @@ unsafe extern "cdecl" fn queue_download(
         state.timestamp = Some(Instant::now());
     }
 
-    let url = CStr::from_ptr(c_url)
+    let mut url = CStr::from_ptr(c_url)
         .to_str()
         .unwrap_or_default()
         .to_string();
+
+    if url.ends_with('/') {
+        url.pop();
+    }
 
     // dispatch to netchan if no url or as_http is false
     if url.is_empty() || !as_http {
@@ -101,31 +104,26 @@ unsafe extern "cdecl" fn queue_download(
 
     log!(state.lua, "dispatching `{}`", path.display());
     let handle: JoinHandle<Result<String>> = thread::spawn(move || {
-        let client = reqwest::blocking::Client::builder()
-            .build()?;
-        let response = client
-            .get(format!("{}/{}", url, path.to_str().unwrap_or_default()))
-            .send()?;
+        let url = format!("{}/{}", url, path.to_str().unwrap_or_default());
+        let mut content = ureq::get(&url)
+            .set("User-Agent", VALVE_USER_AGENT)
+            .set("Referer", VALVE_REFERER)
+            .call()?
+            .into_reader();
 
-        if response.status().is_success() {
-            let mut content = Cursor::new(response.bytes()?);
+        let file_path = Path::new("garrysmod/download").join(path.with_extension(""));
+        std::fs::create_dir_all(file_path.parent().unwrap_or_else(|| return Path::new("")))?;
+        let mut dest = File::create_new(file_path)?;
 
-            let file_path = Path::new("garrysmod/download").join(path.with_extension(""));
-            std::fs::create_dir_all(file_path.parent().unwrap_or_else(|| return Path::new("")))?;
-            let mut dest = File::create_new(file_path)?;
-
-            let mut reader: Box<dyn Read> = if compressed {
-                use bzip2_rs::decoder::DecoderReader;
-                Box::new(DecoderReader::new(&mut content))
-            } else {
-                Box::new(content)
-            };
-
-            copy(&mut reader, &mut dest)?;
-            Ok(path.to_str().unwrap().to_string())
+        let mut reader: Box<dyn Read> = if compressed {
+            use bzip2::read::BzDecoder;
+            Box::new(BzDecoder::new(&mut content))
         } else {
-            Err(AcceleratorError::RemoteFileNotFound(path.display().to_string(), url).into())
-        }
+            Box::new(content)
+        };
+
+        copy(&mut reader, &mut dest)?;
+        Ok(path.to_str().unwrap().to_string())
     });
 
     state.handles.push(handle);
@@ -172,7 +170,7 @@ pub unsafe fn apply(lua: LuaState) -> Result<()> {
         ($func:ident, $type_alias:ty, ($library:ident, $path:ident) -> $pattern:tt) => {
             let $func = {
                 let addr = gmod::find_gmod_signature!(($library, $path) -> $pattern)
-                    .ok_or(AcceleratorError::SigNotFound)?;
+                    .ok_or(AcceleratorError::SigNotFound(stringify!($type_alias).to_string()))?;
 
                 let detour = GenericDetour::new::<$type_alias>(addr, $func)?;
                 detour.enable()?;
@@ -189,7 +187,7 @@ pub unsafe fn apply(lua: LuaState) -> Result<()> {
         linux32_x86_64: [@SIG = "00 00"], // open an issue if you need this sig, or find it yourself
 
         win32: [@SIG = "8b 0d ?? ?? ?? ?? 56 8b 01 ff 50 2c 8b 35 ?? ?? ?? ?? 8b c8 8b 10 ff 52 08 03 c6 5e c3"], // untested
-        linux32: [@SIG = "55 89 e5 53 83 ec 14 8b 15 ?? ?? ?? ?? 8b 1d ?? ?? ?? ?? 8b 02 89 14 24"], // untested
+        linux32: [@SIG = "55 89 e5 53 83 ec 14 8b 15 60 ?? ?? ?? 8b 1d"],
     });
 
     detour_fn!(download_update, DownloadUpdate, (_lib, path) -> {
@@ -200,7 +198,7 @@ pub unsafe fn apply(lua: LuaState) -> Result<()> {
         linux32_x86_64: [@SIG = "00 00"], // open an issue if you need this sig, or find it yourself
 
         win32: [@SIG = "55 8b ec 5d e9 87 05 00 00"], // untested
-        linux32: [@SIG = "55 89 e5 83 ec 18 c7 04 24 ?? ?? ?? ?? e8 9e ff ff ff c9 c3"], // untested
+        linux32: [@SIG = "55 89 e5 83 ec 18 c7 04 24 ?? ?? ?? ?? e8 9e ff ff ff c9 c3"],
     });
 
     detour_fn!(queue_download, QueueDownload, (_lib, path) -> {
@@ -211,7 +209,7 @@ pub unsafe fn apply(lua: LuaState) -> Result<()> {
         linux32_x86_64: [@SIG = "00 00"], // open an issue if you need this sig, or find it yourself
 
         win32: [@SIG = "55 8b ec 51 83 3d ?? ?? ?? ?? 01 0f 8e 8f 01 00 00 8b 0d ?? ?? ?? ?? 53 8b 01 ff 50 2c 8b 5d"], // untested
-        linux32: [@SIG = "55 89 e5 57 56 53 81 ec 5c 02 00 00 8b 45 0c 8b 5d 08 8b 7d 1c"], // untested
+        linux32: [@SIG = "55 89 e5 57 56 53 81 ec 5c 02 00 00 8b 45 0c 8b 5d 08 8b 7d 1c"],
     });
 
     GET_DOWNLOAD_QUEUE_SIZE_DETOUR = Some(get_download_queue_size);
