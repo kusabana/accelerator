@@ -1,6 +1,6 @@
 use std::ffi::{c_char, c_void, CStr, OsString};
 use std::fs::File;
-use std::io::{copy, Cursor, Read};
+use std::io::{copy, Read};
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
 use std::time::Instant;
